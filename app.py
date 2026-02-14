@@ -2,10 +2,7 @@ import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 import os
-import plotly.express as px
-from fpdf import FPDF
 from datetime import date, datetime, timedelta
-from PIL import Image
 
 # 1. CONFIGURATION DE LA PAGE
 st.set_page_config(page_title="Les Brocs de Charlotte", layout="wide", page_icon="🪑")
@@ -13,35 +10,38 @@ st.set_page_config(page_title="Les Brocs de Charlotte", layout="wide", page_icon
 # 2. CONNEXION GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-def load_data_safe(sheet_name):
+def load_data_safe(sheet_name, default_columns):
     try:
+        # Tentative de lecture
         data = conn.read(worksheet=sheet_name, ttl=0)
-        # On nettoie les noms de colonnes
+        if data.empty:
+            return pd.DataFrame(columns=default_columns)
+        # Nettoyage des noms de colonnes (minuscules et sans espaces)
         data.columns = [str(c).lower().strip() for c in data.columns]
+        # Vérification que toutes les colonnes par défaut sont présentes
+        for col in default_columns:
+            if col not in data.columns:
+                data[col] = None
         return data
-    except Exception as e:
-        # Si la feuille est vide ou introuvable, on renvoie un tableau vide avec les bonnes colonnes
-        st.warning(f"Note : La feuille '{sheet_name}' semble vide ou inaccessible.")
-        return pd.DataFrame()
+    except Exception:
+        # Si la feuille n'existe pas ou erreur, on crée un tableau vide avec les colonnes
+        return pd.DataFrame(columns=default_columns)
 
-# Chargement individuel
-df_inv = load_data_safe("Inventaire")
-df_ventes = load_data_safe("Ventes")
-df_clients = load_data_safe("Clients")
-df_depenses = load_data_safe("Depenses")
-df_devis = load_data_safe("Devis")
+# Définition des structures attendues (doit correspondre à votre ligne 1 dans Sheets)
+cols_inv = ["id", "nom", "categorie", "statut", "cout_total", "date_entree", "temps_passe", "cout_materiaux", "type_projet"]
+cols_ventes = ["id_vente", "id_meuble", "nom_meuble", "prix_vente_final", "date_vente", "id_client", "plateforme", "marge_nette"]
+cols_clients = ["id_client", "nom_client", "email", "telephone"]
+cols_depenses = ["id_depense", "date", "categorie", "montant_ttc"]
+cols_devis = ["id_devis", "nom_projet", "montant", "date_devis", "id_client", "details"]
 
+# Chargement individuel et sécurisé
+df_inv = load_data_safe("Inventaire", cols_inv)
+df_ventes = load_data_safe("Ventes", cols_ventes)
+df_clients = load_data_safe("Clients", cols_clients)
+df_depenses = load_data_safe("Depenses", cols_depenses)
+df_devis = load_data_safe("Devis", cols_devis)
 
-# Chargement initial des DataFrames
-try:
-    df_inv = load_data("Inventaire")
-    df_ventes = load_data("Ventes")
-    df_clients = load_data("Clients")
-    df_depenses = load_data("Depenses")
-    df_devis = load_data("Devis")
-except Exception as e:
-    st.error("Erreur de connexion au Google Sheets. Vérifiez vos Secrets et les noms d'onglets.")
-    st.stop()
+# --- FIN DU CHARGEMENT SÉCURISÉ ---
 
 
 # --- FONCTIONS PDF (Format Euros pour éviter erreur symbole) ---
