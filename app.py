@@ -13,9 +13,23 @@ st.set_page_config(page_title="Les Brocs de Charlotte", layout="wide", page_icon
 # 2. CONNEXION GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+def load_data_safe(sheet_name):
+    try:
+        data = conn.read(worksheet=sheet_name, ttl=0)
+        # On nettoie les noms de colonnes
+        data.columns = [str(c).lower().strip() for c in data.columns]
+        return data
+    except Exception as e:
+        # Si la feuille est vide ou introuvable, on renvoie un tableau vide avec les bonnes colonnes
+        st.warning(f"Note : La feuille '{sheet_name}' semble vide ou inaccessible.")
+        return pd.DataFrame()
 
-def load_data(sheet_name):
-    return conn.read(worksheet=sheet_name, ttl=0)
+# Chargement individuel
+df_inv = load_data_safe("Inventaire")
+df_ventes = load_data_safe("Ventes")
+df_clients = load_data_safe("Clients")
+df_depenses = load_data_safe("Depenses")
+df_devis = load_data_safe("Devis")
 
 
 # Chargement initial des DataFrames
