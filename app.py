@@ -2,49 +2,46 @@ import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 import os
+import plotly.express as px
+from fpdf import FPDF
 from datetime import date, datetime, timedelta
+from PIL import Image
 
 # 1. CONFIGURATION DE LA PAGE
 st.set_page_config(page_title="Les Brocs de Charlotte", layout="wide", page_icon="🪑")
 
-# 2. CONNEXION GOOGLE SHEETS
+# 2. CONNEXION GOOGLE SHEETS SÉCURISÉE
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data_safe(sheet_name, default_columns):
     try:
-        # Tentative de lecture
         data = conn.read(worksheet=sheet_name, ttl=0)
-        if data.empty:
+        if data is None or data.empty:
             return pd.DataFrame(columns=default_columns)
-        # Nettoyage des noms de colonnes (minuscules et sans espaces)
+        # Nettoyage des colonnes
         data.columns = [str(c).lower().strip() for c in data.columns]
-        # Vérification que toutes les colonnes par défaut sont présentes
         for col in default_columns:
             if col not in data.columns:
                 data[col] = None
         return data
-    except Exception:
-        # Si la feuille n'existe pas ou erreur, on crée un tableau vide avec les colonnes
+    except:
         return pd.DataFrame(columns=default_columns)
 
-# Définition des structures attendues (doit correspondre à votre ligne 1 dans Sheets)
+# Définition des structures
 cols_inv = ["id", "nom", "categorie", "statut", "cout_total", "date_entree", "temps_passe", "cout_materiaux", "type_projet"]
-cols_ventes = ["id_vente", "id_meuble", "nom_meuble", "prix_vente_final", "date_vente", "id_client", "plateforme", "marge_nette"]
+cols_ventes = ["id_vente", "nom_meuble", "prix_vente_final", "date_vente", "marge_nette"]
 cols_clients = ["id_client", "nom_client", "email", "telephone"]
 cols_depenses = ["id_depense", "date", "categorie", "montant_ttc"]
 cols_devis = ["id_devis", "nom_projet", "montant", "date_devis", "id_client", "details"]
 
-# Chargement individuel et sécurisé
+# Chargement des données
 df_inv = load_data_safe("Inventaire", cols_inv)
 df_ventes = load_data_safe("Ventes", cols_ventes)
 df_clients = load_data_safe("Clients", cols_clients)
 df_depenses = load_data_safe("Depenses", cols_depenses)
 df_devis = load_data_safe("Devis", cols_devis)
 
-# --- FIN DU CHARGEMENT SÉCURISÉ ---
-
-
-# --- FONCTIONS PDF (Format Euros pour éviter erreur symbole) ---
+# --- FONCTIONS PDF ---
 def generer_facture(vente_data, client_nom):
     pdf = FPDF()
     pdf.add_page()
@@ -53,12 +50,10 @@ def generer_facture(vente_data, client_nom):
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(200, 10, f"Facture N° {vente_data['id_vente']}", ln=True, align='C')
     pdf.ln(10)
-    pdf.set_font("Arial", '', 12)
     pdf.cell(100, 10, f"Date : {vente_data['date_vente']}")
     pdf.cell(100, 10, f"Client : {client_nom}", ln=True, align='R')
     pdf.ln(10)
     pdf.set_fill_color(240, 240, 240)
-    pdf.set_font("Arial", 'B', 12)
     pdf.cell(140, 10, "Designation", 1, 0, 'L', True)
     pdf.cell(50, 10, "Total TTC", 1, 1, 'C', True)
     pdf.set_font("Arial", '', 12)
@@ -66,150 +61,164 @@ def generer_facture(vente_data, client_nom):
     pdf.cell(50, 15, f"{vente_data['prix_vente_final']} Euros", 1, 1, 'C')
     pdf.ln(20)
     pdf.set_font("Arial", 'I', 10)
-    pdf.multi_cell(0, 10, "Merci pour votre achat chez Les Brocs de Charlotte !", align='C')
-    output = pdf.output(dest='S')
-    return bytes(output) if not isinstance(output, str) else output.encode('latin-1')
-
+    pdf.multi_cell(0, 10, "Merci pour votre achat !\nTVA non applicable - Art. 293B du CGI", align='C')
+    return pdf.output(dest='S').encode('latin-1')
 
 def generer_devis_pdf(devis_data, client_nom):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 22)
-    pdf.set_text_color(139, 90, 60)
+    pdf.set_text_color(139, 90, 60) 
     pdf.cell(0, 15, "LES BROCS DE CHARLOTTE", ln=True, align='C')
-    pdf.set_font("Arial", 'I', 10)
-    pdf.cell(0, 5, "Renovation de meubles & brocante en ligne", ln=True, align='C')
-    pdf.set_text_color(0, 0, 0)
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 11)
+    pdf.set_text_color(0, 0, 0)
     pdf.cell(100, 6, "Les Brocs de Charlotte")
-    pdf.set_font("Arial", '', 11)
     pdf.cell(0, 6, client_nom, ln=True, align='R')
-    pdf.cell(100, 6, "11, Rue du Bois de la Roche")
-    pdf.cell(100, 6, "29610 GARLAN", ln=True)
-    pdf.cell(100, 6, "lesbrocsdecharlotte@gmail.com")
-    pdf.ln(10)
+    pdf.cell(100, 6, "11, Rue du Bois de la Roche, 29610 GARLAN")
+    pdf.ln(15)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, f"Devis N° DEV-{devis_data['id_devis']}", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 6, f"Date : {devis_data['date_devis']}", ln=True)
     pdf.ln(5)
     pdf.set_fill_color(240, 230, 220)
-    pdf.set_font("Arial", 'B', 10)
     pdf.cell(15, 10, "Qte", 1, 0, 'C', True)
     pdf.cell(125, 10, "Designation", 1, 0, 'L', True)
     pdf.cell(50, 10, "Total HT", 1, 1, 'C', True)
-    pdf.set_font("Arial", '', 10)
     pdf.cell(15, 20, "1", 1)
     pdf.multi_cell(125, 10, f"{devis_data['nom_projet']}\n{devis_data['details']}", 1)
-    pdf.set_xy(150, pdf.get_y() - 20)
+    pdf.set_xy(150, pdf.get_y()-20)
     pdf.cell(50, 20, f"{devis_data['montant']} Euros", 1, 1, 'C')
-    pdf.ln(5)
+    pdf.ln(10)
     pdf.set_font("Arial", 'B', 11)
-    pdf.cell(140, 10, "TOTAL TTC (TVA non applicable art. 293B du CGI)", 0, 0, 'R')
+    pdf.cell(140, 10, "TOTAL TTC (TVA non applicable)", 0, 0, 'R')
     pdf.cell(50, 10, f"{devis_data['montant']} Euros", 1, 1, 'C')
-    # Page CGV (Simplifiée pour le code)
+    # Page 2 : CGV
     pdf.add_page()
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, "Conditions Generales de Vente", ln=True, align='C')
     pdf.set_font("Arial", '', 9)
-    pdf.multi_cell(0, 5,
-                   "1. Nature des produits: Meubles anciens...\n2. Prix: Hors TVA art 293B...\n3. Retours: Non acceptes.")
-    output = pdf.output(dest='S')
-    return bytes(output) if not isinstance(output, str) else output.encode('latin-1')
+    pdf.multi_cell(0, 5, "1. Objet: Les présentes conditions...\n2. Devis: Valable 30 jours...\n3. Paiement: 30% d'acompte...")
+    return pdf.output(dest='S').encode('latin-1')
 
+# --- INTERFACE PRINCIPALE ---
+st.title("🪑 Les Brocs de Charlotte")
 
-# --- INTERFACE ---
 tabs = st.tabs(["📊 Dashboard", "📦 Atelier & Stock", "💰 Ventes", "📝 Devis", "👥 Clients", "💸 Dépenses"])
 
 # 1. DASHBOARD
 with tabs[0]:
-    st.header("Analyses et Remuneration")
+    st.header("Analyses et Rémunération")
     if not df_ventes.empty:
         df_ventes['date_vente'] = pd.to_datetime(df_ventes['date_vente'])
-        an_sel = st.selectbox("Annee", sorted(df_ventes['date_vente'].dt.year.unique(), reverse=True))
-
-        ca_mensuel = df_ventes[df_ventes['date_vente'].dt.year == an_sel]['prix_vente_final'].sum()
-        m_n_v = df_ventes[df_ventes['date_vente'].dt.year == an_sel]['marge_nette'].sum()
-
-        # Calcul URSSAF (Différence entre marge brute théorique et marge nette stockée)
-        # On peut aussi le recalculer directement : CA * 0.123 si activé
-        urssaf_m = ca_mensuel * 0.123  # Estimation simplifiée pour le dashboard
-
-        k1, k2, k3 = st.columns(3)
-        k1.metric("CA Annuel", f"{ca_mensuel:.2f} Euros")
-        k2.metric("Cout URSSAF (Est.)", f"{urssaf_m:.2f} Euros")
-        k3.metric("Marge Nette", f"{m_n_v:.2f} Euros")
-
-# --- 2. ATELIER & STOCK (VERSION GOOGLE SHEETS) ---
-with tabs[1]:
-    st.header("📦 Suivi du Stock et Prestations")
-    
-    with st.expander("➕ Ajouter un nouveau projet"):
-        with st.form("new_meuble_form"):
-            col1, col2 = st.columns(2)
-            n_m = col1.text_input("Nom du meuble / Projet")
-            type_p = col1.selectbox("Type de projet", ["Achat/Revente", "Prestation Client"])
-            cat_m = col1.selectbox("Catégorie", ["Commode", "Table", "Assise", "Armoire", "Bureau", "Déco", "Autre"])
-            d_entree = col1.date_input("Date d'entrée", value=date.today())
-            
-            p_achat = col2.number_input("Coût d'achat (€) - 0 si prestation", min_value=0.0)
-            
-            if st.form_submit_button("Enregistrer dans le Cloud"):
-                if n_m:
-                    # Préparation de la nouvelle ligne
-                    new_data = {
-                        "id": len(df_inv) + 1,
-                        "nom": n_m,
-                        "categorie": cat_m,
-                        "statut": "À rénover",
-                        "cout_total": float(p_achat),
-                        "date_entree": str(d_entree),
-                        "temps_passe": 0.0,
-                        "cout_materiaux": 0.0,
-                        "type_projet": type_p
-                    }
-                    
-                    # Ajout au DataFrame existant
-                    df_inv = pd.concat([df_inv, pd.DataFrame([new_data])], ignore_index=True)
-                    
-                    # Mise à jour du Google Sheets
-                    conn.update(worksheet="Inventaire", data=df_inv)
-                    st.success(f"✅ '{n_m}' a bien été ajouté à votre Google Sheets !")
-                    st.rerun()
-
-    st.divider()
-    
-    # Affichage du stock actuel
-    if not df_inv.empty:
-        # Nettoyage rapide pour l'affichage
-        df_display = df_inv.copy()
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        annee = st.selectbox("Année", sorted(df_ventes['date_vente'].dt.year.unique(), reverse=True))
+        
+        df_annee = df_ventes[df_ventes['date_vente'].dt.year == annee]
+        ca = df_annee['prix_vente_final'].sum()
+        marge = df_annee['marge_nette'].sum()
+        urssaf = ca * 0.123
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("CA Annuel", f"{ca:.2f} €")
+        c2.metric("Cotisations URSSAF (12.3%)", f"{urssaf:.2f} €", delta_color="inverse")
+        c3.metric("Rémunération Nette", f"{marge:.2f} €")
+        
+        fig = px.bar(df_annee, x='date_vente', y='prix_vente_final', title="Ventes dans le temps", color_discrete_sequence=['#8B5A3C'])
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("Le stock est vide. Utilisez le formulaire ci-dessus pour ajouter votre premier meuble.")
+        st.info("Aucune vente enregistrée pour le moment.")
+
+# 2. ATELIER & STOCK
+with tabs[1]:
+    st.header("Gestion du Stock")
+    with st.expander("➕ Ajouter un meuble"):
+        with st.form("add_form"):
+            n = st.text_input("Nom du meuble")
+            cat = st.selectbox("Catégorie", ["Commode", "Table", "Assise", "Armoire", "Bureau", "Autre"])
+            t_p = st.selectbox("Type", ["Achat/Revente", "Prestation Client"])
+            c_a = st.number_input("Prix d'achat (€)", min_value=0.0)
+            if st.form_submit_button("Ajouter au Stock"):
+                new_m = pd.DataFrame([{"id": len(df_inv)+1, "nom": n, "categorie": cat, "statut": "À rénover", "cout_total": c_a, "date_entree": str(date.today()), "temps_passe": 0, "cout_materiaux": 0, "type_projet": t_p}])
+                df_inv = pd.concat([df_inv, new_m], ignore_index=True)
+                conn.update(worksheet="Inventaire", data=df_inv)
+                st.success("Meuble ajouté !")
+                st.rerun()
+    
+    # Edition rapide du stock
+    st.subheader("Stock actuel")
+    edited_df = st.data_editor(df_inv, num_rows="dynamic", use_container_width=True)
+    if st.button("Sauvegarder les modifications du stock"):
+        conn.update(worksheet="Inventaire", data=edited_df)
+        st.success("Stock mis à jour !")
 
 # 3. VENTES
 with tabs[2]:
-    st.header("💰 Ventes")
-    with st.form("vente_form"):
-        meuble_v = st.selectbox("Meuble", df_inv[df_inv['statut'] != 'Vendu']['nom'].tolist())
-        client_v = st.selectbox("Client", df_clients['nom_client'].tolist())
-        prix_v = st.number_input("Prix final", min_value=0.0)
-        urs = st.checkbox("Urssaf (12.3%)", value=True)
-        if st.form_submit_button("Vendre"):
-            # Calcul marge
-            row_m = df_inv[df_inv['nom'] == meuble_v].iloc[0]
-            taxe = (prix_v * 0.123) if urs else 0
-            m_n = prix_v - row_m['cout_total'] - row_m['cout_materiaux'] - taxe
+    st.header("Enregistrer une vente")
+    meubles_dispos = df_inv[df_inv['statut'] != 'Vendu']['nom'].tolist()
+    if meubles_dispos:
+        with st.form("vente_form"):
+            m_v = st.selectbox("Meuble vendu", meubles_dispos)
+            c_v = st.selectbox("Client", df_clients['nom_client'].tolist() if not df_clients.empty else ["Client Passage"])
+            p_v = st.number_input("Prix de vente final (€)", min_value=0.0)
+            if st.form_submit_button("Valider la vente"):
+                # Calcul marge
+                meuble_row = df_inv[df_inv['nom'] == m_v].iloc[0]
+                marge_n = p_v - meuble_row['cout_total'] - meuble_row['cout_materiaux'] - (p_v * 0.123)
+                
+                # Update Ventes
+                new_v = pd.DataFrame([{"id_vente": len(df_ventes)+1, "nom_meuble": m_v, "prix_vente_final": p_v, "date_vente": str(date.today()), "marge_nette": marge_n}])
+                df_ventes = pd.concat([df_ventes, new_v], ignore_index=True)
+                conn.update(worksheet="Ventes", data=df_ventes)
+                
+                # Update Stock
+                df_inv.loc[df_inv['nom'] == m_v, 'statut'] = 'Vendu'
+                conn.update(worksheet="Inventaire", data=df_inv)
+                st.success("Vente enregistrée !")
+                st.rerun()
+    
+    st.subheader("Historique des ventes")
+    st.dataframe(df_ventes, use_container_width=True)
 
-            # Update Ventes
-            new_v = pd.DataFrame([{"id_vente": len(df_ventes) + 1, "nom_meuble": meuble_v, "prix_vente_final": prix_v,
-                                   "date_vente": str(date.today()), "marge_nette": m_n}])
-            df_v_up = pd.concat([df_ventes, new_v], ignore_index=True)
-            conn.update(worksheet="Ventes", data=df_v_up)
+# 4. DEVIS
+with tabs[3]:
+    st.header("Éditeur de Devis")
+    with st.form("devis_form"):
+        d_nom = st.text_input("Nom du projet")
+        d_client = st.selectbox("Client pour devis", df_clients['nom_client'].tolist() if not df_clients.empty else ["Nouveau"])
+        d_montant = st.number_input("Montant total (€)", min_value=0.0)
+        d_details = st.text_area("Détails de la prestation")
+        if st.form_submit_button("Générer Devis"):
+            new_d = {"id_devis": len(df_devis)+1, "nom_projet": d_nom, "montant": d_montant, "date_devis": str(date.today()), "details": d_details}
+            pdf_file = generer_devis_pdf(new_d, d_client)
+            st.download_button("📥 Télécharger le Devis PDF", pdf_file, f"Devis_{d_nom}.pdf", "application/pdf")
+            # Sauvegarde optionnelle dans le Sheets
+            df_devis = pd.concat([df_devis, pd.DataFrame([new_d])], ignore_index=True)
+            conn.update(worksheet="Devis", data=df_devis)
 
-            # Update Stock
-            df_inv.loc[df_inv['nom'] == meuble_v, 'statut'] = 'Vendu'
-            conn.update(worksheet="Inventaire", data=df_inv)
-            st.success("Vendu !")
+# 5. CLIENTS
+with tabs[4]:
+    st.header("Répertoire Clients")
+    with st.form("client_form"):
+        c_n = st.text_input("Nom du client")
+        c_e = st.text_input("Email")
+        if st.form_submit_button("Ajouter Client"):
+            new_c = pd.DataFrame([{"id_client": len(df_clients)+1, "nom_client": c_n, "email": c_e}])
+            df_clients = pd.concat([df_clients, new_c], ignore_index=True)
+            conn.update(worksheet="Clients", data=df_clients)
             st.rerun()
+    st.dataframe(df_clients, use_container_width=True)
+
+# 6. DÉPENSES
+with tabs[5]:
+    st.header("Dépenses (Consommables, Outils)")
+    with st.form("dep_form"):
+        d_d = st.date_input("Date")
+        d_c = st.text_input("Objet / Catégorie")
+        d_m = st.number_input("Montant (€)", min_value=0.0)
+        if st.form_submit_button("Enregistrer Dépense"):
+            new_dep = pd.DataFrame([{"id_depense": len(df_depenses)+1, "date": str(d_d), "categorie": d_c, "montant_ttc": d_m}])
+            df_depenses = pd.concat([df_depenses, new_dep], ignore_index=True)
+            conn.update(worksheet="Depenses", data=df_depenses)
+            st.rerun()
+    st.dataframe(df_depenses, use_container_width=True)
