@@ -127,22 +127,52 @@ with tabs[0]:
         k2.metric("Cout URSSAF (Est.)", f"{urssaf_m:.2f} Euros")
         k3.metric("Marge Nette", f"{m_n_v:.2f} Euros")
 
-# 2. ATELIER & STOCK
+# --- 2. ATELIER & STOCK (VERSION GOOGLE SHEETS) ---
 with tabs[1]:
-    st.header("📦 Stock")
-    with st.form("add_meuble"):
-        n_m = st.text_input("Nom du meuble")
-        type_p = st.selectbox("Type", ["Achat/Revente", "Prestation Client"])
-        p_a = st.number_input("Cout achat", min_value=0.0)
-        if st.form_submit_button("Ajouter"):
-            new_row = pd.DataFrame(
-                [{"id": len(df_inv) + 1, "nom": n_m, "type_projet": type_p, "cout_total": p_a, "statut": "A renover",
-                  "temps_passe": 0, "cout_materiaux": 0}])
-            df_updated = pd.concat([df_inv, new_row], ignore_index=True)
-            conn.update(worksheet="Inventaire", data=df_updated)
-            st.success("Ajoute !")
-            st.rerun()
-    st.dataframe(df_inv)
+    st.header("📦 Suivi du Stock et Prestations")
+    
+    with st.expander("➕ Ajouter un nouveau projet"):
+        with st.form("new_meuble_form"):
+            col1, col2 = st.columns(2)
+            n_m = col1.text_input("Nom du meuble / Projet")
+            type_p = col1.selectbox("Type de projet", ["Achat/Revente", "Prestation Client"])
+            cat_m = col1.selectbox("Catégorie", ["Commode", "Table", "Assise", "Armoire", "Bureau", "Déco", "Autre"])
+            d_entree = col1.date_input("Date d'entrée", value=date.today())
+            
+            p_achat = col2.number_input("Coût d'achat (€) - 0 si prestation", min_value=0.0)
+            
+            if st.form_submit_button("Enregistrer dans le Cloud"):
+                if n_m:
+                    # Préparation de la nouvelle ligne
+                    new_data = {
+                        "id": len(df_inv) + 1,
+                        "nom": n_m,
+                        "categorie": cat_m,
+                        "statut": "À rénover",
+                        "cout_total": float(p_achat),
+                        "date_entree": str(d_entree),
+                        "temps_passe": 0.0,
+                        "cout_materiaux": 0.0,
+                        "type_projet": type_p
+                    }
+                    
+                    # Ajout au DataFrame existant
+                    df_inv = pd.concat([df_inv, pd.DataFrame([new_data])], ignore_index=True)
+                    
+                    # Mise à jour du Google Sheets
+                    conn.update(worksheet="Inventaire", data=df_inv)
+                    st.success(f"✅ '{n_m}' a bien été ajouté à votre Google Sheets !")
+                    st.rerun()
+
+    st.divider()
+    
+    # Affichage du stock actuel
+    if not df_inv.empty:
+        # Nettoyage rapide pour l'affichage
+        df_display = df_inv.copy()
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+    else:
+        st.info("Le stock est vide. Utilisez le formulaire ci-dessus pour ajouter votre premier meuble.")
 
 # 3. VENTES
 with tabs[2]:
